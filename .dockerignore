@@ -1,0 +1,24 @@
+# Keeps the build context small and stops local state from leaking into the
+# image. .venv in particular is hundreds of megabytes.
+.venv/
+venv/
+.env
+
+.git/
+.gitignore
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+
+.idea/
+.vscode/
+.DS_Store

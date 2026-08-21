@@ -1,9 +1,13 @@
-# Spins up the PostgreSQL instance the API expects.
+# Brings up the whole stack:
 #
-#   docker compose up -d
+#   docker compose up --build
 #
-# The API itself is run directly with uvicorn (see README.md) so that the
-# usual edit-and-reload development loop stays fast.
+# The API is then on http://localhost:8000 and PostgreSQL on localhost:5432.
+#
+# To run only the database and start uvicorn yourself (faster edit-reload
+# loop while developing):
+#
+#   docker compose up -d db
 
 services:
   db:
@@ -15,16 +19,53 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: urlshortener
     ports:
-      - "5432:5432"
+      # Host-side port only, for connecting with psql or a GUI client. The API
+      # reaches the database over the internal network and ignores this.
+      # Override with DB_PORT=5433 if something already owns 5432 locally.
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Creates the separate database used by the test suite on first boot.
+      # Creates the database used by the test suite, on first boot only.
       - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d urlshortener"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  api:
+    build: .
+    container_name: url-shortener-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Waits for the healthcheck above to pass, not just for the container
+        # to exist. Postgres accepts connections a few seconds after it starts,
+        # and without this the API would try to create its table too early and
+        # exit.
+        condition: service_healthy
+    environment:
+      # `db` is the compose service name, which resolves on the internal
+      # network. Using localhost here is the classic mistake: inside the API
+      # container, localhost is the API container.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/urlshortener
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/urlshortener_test
+      # What the client sees, so this stays localhost.
+      BASE_URL: http://localhost:8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status == 200 else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pgdata:
