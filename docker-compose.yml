@@ -1,0 +1,30 @@
+# Spins up the PostgreSQL instance the API expects.
+#
+#   docker compose up -d
+#
+# The API itself is run directly with uvicorn (see README.md) so that the
+# usual edit-and-reload development loop stays fast.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: url-shortener-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: urlshortener
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the separate database used by the test suite on first boot.
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d urlshortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
